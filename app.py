@@ -29,7 +29,9 @@ def dijkstra(graph, source):
 def reconstruct_path(prev, source, target):
     path = []
     node = target
-    while node is not None:
+    visited = set()
+    while node is not None and node not in visited:
+        visited.add(node)
         path.append(node)
         node = prev[node]
     path.reverse()
@@ -37,21 +39,23 @@ def reconstruct_path(prev, source, target):
         return path
     return []
 
+# --- Graph Drawing ---
 def draw_graph(graph, paths, filename="static/graph.png"):
     G = nx.Graph()
     for u in graph:
         for v, w in graph[u]:
             G.add_edge(u, v, weight=w)
 
-    pos = nx.spring_layout(G)
+    pos = nx.spring_layout(G, seed=42)  # fixed layout for consistency
     plt.figure(figsize=(6, 6))
     nx.draw(G, pos, with_labels=True, node_color="lightblue", node_size=800, font_size=10)
     nx.draw_networkx_edge_labels(G, pos, edge_labels={(u, v): w for u in graph for v, w in graph[u]})
 
-    # Highlight shortest paths
+    # Highlight shortest paths safely
     for path in paths:
-        edges = list(zip(path, path[1:]))
-        nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color="red", width=2)
+        if len(path) > 1:  # only draw valid paths
+            edges = list(zip(path, path[1:]))
+            nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color="red", width=2)
 
     plt.savefig(filename)
     plt.close()
