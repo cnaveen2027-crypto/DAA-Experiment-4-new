@@ -1,7 +1,7 @@
-from flask import Flask, request, render_template_string, url_for
-import heapq, os
-import matplotlib.pyplot as plt
+from flask import Flask, request, render_template_string
+import heapq
 import networkx as nx
+import plotly.graph_objects as go
 
 app = Flask(__name__)
 
@@ -39,26 +39,67 @@ def reconstruct_path(prev, source, target):
         return path
     return []
 
-# --- Graph Drawing ---
-def draw_graph(graph, paths, filename="static/graph.png"):
+# --- Plotly Graph Visualization ---
+def draw_graph_plotly(graph, paths):
     G = nx.Graph()
     for u in graph:
         for v, w in graph[u]:
             G.add_edge(u, v, weight=w)
 
-    pos = nx.spring_layout(G, seed=42)  # fixed layout for consistency
-    plt.figure(figsize=(6, 6))
-    nx.draw(G, pos, with_labels=True, node_color="lightblue", node_size=800, font_size=10)
-    nx.draw_networkx_edge_labels(G, pos, edge_labels={(u, v): w for u in graph for v, w in graph[u]})
+    pos = nx.spring_layout(G, seed=42)
 
-    # Highlight shortest paths safely
+    # Edges
+    edge_x, edge_y = [], []
+    for u, v in G.edges():
+        x0, y0 = pos[u]
+        x1, y1 = pos[v]
+        edge_x += [x0, x1, None]
+        edge_y += [y0, y1, None]
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=1, color='gray'),
+        hoverinfo='none',
+        mode='lines'
+    )
+
+    # Nodes
+    node_x, node_y, labels = [], [], []
+    for node in G.nodes():
+        x, y = pos[node]
+        node_x.append(x)
+        node_y.append(y)
+        labels.append(str(node))
+
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers+text',
+        text=labels,
+        textposition="top center",
+        marker=dict(size=20, color='lightblue'),
+        hoverinfo='text'
+    )
+
+    # Highlight shortest paths
+    path_edges_x, path_edges_y = [], []
     for path in paths:
-        if len(path) > 1:  # only draw valid paths
-            edges = list(zip(path, path[1:]))
-            nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color="red", width=2)
+        if len(path) > 1:
+            for u, v in zip(path, path[1:]):
+                x0, y0 = pos[u]
+                x1, y1 = pos[v]
+                path_edges_x += [x0, x1, None]
+                path_edges_y += [y0, y1, None]
 
-    plt.savefig(filename)
-    plt.close()
+    path_trace = go.Scatter(
+        x=path_edges_x, y=path_edges_y,
+        line=dict(width=3, color='red'),
+        hoverinfo='none',
+        mode='lines'
+    )
+
+    fig = go.Figure(data=[edge_trace, path_trace, node_trace])
+    fig.update_layout(showlegend=False, margin=dict(l=20, r=20, t=20, b=20))
+    return fig.to_html(full_html=False)
 
 # --- HTML Template ---
 TEMPLATE = """
@@ -100,7 +141,7 @@ TEMPLATE = """
             {% endfor %}
         </table>
         <h3>Graph Visualization:</h3>
-        <img src="{{ url_for('static', filename='graph.png') }}" alt="Graph">
+        {{ graph_html|safe }}
     {% endif %}
 </body>
 </html>
@@ -110,6 +151,7 @@ TEMPLATE = """
 def index():
     result = None
     src = None
+    graph_html = None
 
     if request.method == "POST":
         try:
@@ -141,14 +183,13 @@ def index():
                 d = dist[v] if dist[v] != float("inf") else "INF"
                 result.append((v, d, path_str))
 
-            # Draw graph with highlighted paths
-            draw_graph(graph, paths)
+            # Generate interactive graph HTML
+            graph_html = draw_graph_plotly(graph, paths)
 
         except Exception as e:
             result = [("Error", "Invalid input", str(e))]
 
-    return render_template_string(TEMPLATE, result=result, src=src)
+    return render_template_string(TEMPLATE, result=result, src=src, graph_html=graph_html)
 
 if __name__ == "__main__":
-    os.makedirs("static", exist_ok=True)
     app.run(host="0.0.0.0", port=5000, debug=True)
